@@ -1,8 +1,10 @@
+import java.util.ArrayList;
+
 /**
  * Created by Dylan于东海 on 2016/10/26.
  */
 public class Test {
     public static void main(String[] args) {
-        System.out.println(args[0]);
+        Word2vec.createVocab("test.txt");
     }
 }
