@@ -19,11 +19,11 @@ public class Word2vec {
     static int debug_mode;              //是否为debug模式
     static int binary;                  //是否为二进制存储
     static int cbow;                    //是否cbow模型
-    static int window;                  //词袋大小
+    static int window = 5;              //词袋大小
     static int sample;                  //
     static int hs;                      //是否层次softmax
     static int negative;                //负采样个数
-    static int num_threads;             //线程数目
+    static int num_threads = 4;         //线程数目
     static int iter;                    //迭代次数
     static int min_count = 1;           //最小词频阈值，低于此阈值的词删除
     static int classes;                 //是否聚类
@@ -59,11 +59,11 @@ public class Word2vec {
     static Map<String, Long> vocab = new HashMap<String, Long>();           //统计字典，词频
     static List<Vocab_word> leavesNodes = new ArrayList<Vocab_word>();      //叶节点
     static List<Vocab_word> fatherNodes = new ArrayList<Vocab_word>();      //非叶节点
-    static Map<String, Vocab_word> vocabH = new HashMap();                  //存储完整词信息的字典
     static long wordNum = 0;                                                //文件中词的数量
+    static Map<String, Integer> vocabIndex = new HashMap();
 
-    static List<int[]> wordVec;
-    static List<int[]> fatherVec;
+    static List<float[]> wordVec;
+    static List<float[]> fatherVec;
 
     static class trainThread implements Runnable {
         private int id = 0;
@@ -84,6 +84,7 @@ public class Word2vec {
                 sc.useDelimiter("[\\s\\t\\n]");
 
                 List<String> sentence = new ArrayList<String>();
+
                 while (sc.hasNext() && currentNum <= wordNum/num_threads) {
                     String word = sc.next();
                     if (word.length() > 0) {
@@ -91,14 +92,24 @@ public class Word2vec {
                         if (sentence.size() < sentSize) {
                             sentence.add(word);
                         }else {
-
+                            for (int i=0;i<sentence.size();i++) {
+                                float[] X = new float[layer1_size];           //隐含层向量
+                                int sumNum = 0;
+                                for (int j = i - window; j < i+window; j++) { //累加
+                                    if (j >= 0 && j < sentence.size() && j != i){
+                                        X = Tools.sumVec(X,wordVec.get(vocabIndex.get(sentence.get(j))));
+                                        sumNum++;
+                                    }
+                                }
+                                Tools.div(X,sumNum);
+                            }
                             sentence.clear();
                         }
                         currentNum++;
                     }
 
                 }
-                System.out.println("Thread " + id + " finished");
+                //System.out.println("Thread " + id + " finished");
             }catch (IOException e) {
                 System.out.println("Can not find train file: " + train_file);
                 System.exit(1);
@@ -109,7 +120,7 @@ public class Word2vec {
     }
 
     static void trainModel(){
-
+        System.out.println("...开始训练..." + new Date());
         ExecutorService es = Executors.newFixedThreadPool(num_threads);
         File tF = new File(train_file);
         long fileLength = tF.length();
@@ -119,21 +130,31 @@ public class Word2vec {
         es.shutdown();
         while (true) {
             if (es.isTerminated()) {
-                System.out.println("...训练结束...");
+                System.out.println("...训练结束..." + new Date());
                 break;
             }
+            try {
+                Thread.sleep(2000);
+            }catch (Exception e) {
+                System.out.println("sleep interupted");
+            }
+
         }
 
     }
     static void initNet() {
-        wordVec = new ArrayList<int[]>();
+        wordVec = new ArrayList<float[]>();
+        Random random = new Random();
         for (int i=0;i<leavesNodes.size();i++) {
-            int[] temp = new int[layer1_size];
+            float[] temp = new float[layer1_size];
+            for (int j = 0; j < temp.length; j++) {
+                temp[j] = (random.nextFloat()-0.5f)/layer1_size;
+            }
             wordVec.add(temp);
         }
-        fatherVec = new ArrayList<int[]>();
+        fatherVec = new ArrayList<float[]>();
         for (int i=0;i<fatherNodes.size();i++) {
-            int[] temp = new int[layer1_size];
+            float[] temp = new float[layer1_size];
             fatherVec.add(temp);
         }
         createHuffTree();
@@ -175,7 +196,7 @@ public class Word2vec {
                 }
             }
         }
-        System.out.println("...字典构建完成...");
+        System.out.println("...字典构建完成..." + new Date());
     }
 
     //向哈夫曼树的非叶子结点列表添加非叶子结点
@@ -240,6 +261,8 @@ public class Word2vec {
                 }
             }
         }
+
+        vocab.clear();
         //计算每个叶节点的路径和编码
         for (int k = 0;k<leavesNodes.size();k++) {
             //System.out.println(leavesNodes.get(i).toString());
@@ -251,13 +274,12 @@ public class Word2vec {
                 path.add(0, word.father);
                 code.add(0,word.Ncode);
                 word = fatherNodes.get(word.father);
-
             }
             word = leavesNodes.get(k);
             word.point = path;
             word.code = code;
             word.codelen = (short)code.size();
-            vocabH.put(word.word,word);
+            vocabIndex.put(word.word,k);
             //System.out.println(path.toString());
             //System.out.println(code.toString());
         }
